@@ -1,8 +1,5 @@
-import './App.css'
-
 import React, { useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import "./App.css";
 
 // shadcn/ui components
 import { Card } from "@/components/ui/card";
@@ -11,12 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { Spinner } from "./components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-
-// Import pdfjs-dist for PDF parsing (Vite compatible)
-// Removed pdfjs-dist imports and worker setup since only DOCX is supported now.
 import mammoth from "mammoth/mammoth.browser";
+import { GlobalWorkerOptions, getDocument} from 'pdfjs-dist';
+// Set workerSrc for pdfjs-dist v5.x
+GlobalWorkerOptions.workerSrc = '/pdf.worker.mjs';
 
-// TODO: Replace with your actual Supabase details
+
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -49,8 +46,10 @@ function App() {
       let extractedText = "";
       if (fileExt === "docx") {
         extractedText = await extractDocxText(data);
+      } else if (fileExt === "pdf") {
+        extractedText = await extractPdfText(data);
       } else {
-        throw new Error("Only DOCX files are supported");
+        throw new Error("Only DOCX and PDF files are supported");
       }
       setText(extractedText);
     } catch (err: any) {
@@ -60,8 +59,6 @@ function App() {
     }
   };
 
-  // Removed PDF text extraction since only DOCX is supported now.
-
   // DOCX text extraction
   async function extractDocxText(blob: Blob): Promise<string> {
     const arrayBuffer = await blob.arrayBuffer();
@@ -69,16 +66,30 @@ function App() {
     return result.value;
   }
 
+  // PDF text extraction using pdfjs-dist
+  async function extractPdfText(blob: Blob): Promise<string> {
+    const arrayBuffer = await blob.arrayBuffer();
+    const pdf = await getDocument({ data: arrayBuffer }).promise;
+    let text = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items.map((item: any) => item.str).join(' ');
+      text += pageText + '\n---\n';
+    }
+    return text.trim() || '[No extractable text found in this PDF]';
+  }
+
   return (
     <div className="flex items-center justify-center min-h-svh bg-muted py-8">
       <div className="w-full max-w-xl">
         <Card className="p-8 shadow-lg">
-          <h1 className="text-3xl font-bold mb-6 text-center">DOCX to Text Extractor</h1>
+          <h1 className="text-3xl font-bold mb-6 text-center">DOCX & PDF to Text Extractor</h1>
           <div className="flex flex-col gap-4">
             <Input
               id="file-upload"
               type="file"
-              accept=".docx"
+              accept=".docx,.pdf"
               onChange={handleFileChange}
               disabled={loading}
             />
@@ -86,7 +97,7 @@ function App() {
               {loading ? (
                 <span className="flex items-center gap-2"><Spinner className="w-4 h-4 animate-spin" /> Processing...</span>
               ) : (
-                file ? `Selected: ${file.name}` : "Choose DOCX File"
+                file ? `Selected: ${file.name}` : "Choose DOCX or PDF File"
               )}
             </Button>
             {error && <Alert variant="destructive">{error}</Alert>}
